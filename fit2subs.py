@@ -380,7 +380,7 @@ class DiveLog(object):
         self.dc_data = self._dc_data_template.copy()
         self.dive_data = self._dive_data_template.copy()
         self.sample_data = self._sample_template.copy()
-        self._sample_cache.copy()
+        self._sample_cache = self._sample_template.copy()
 
     def reset_sample_vars(self):
         """Resets vars before storing single sample record.
