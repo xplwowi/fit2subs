@@ -20,6 +20,7 @@ Hopefully Subsurface will have such import feature in near future.
  - can include apnea dives
  - filters out dives shorter than defined time 
  - lists tabularized FIT files summaries (to easy pick interesting ones)
+ - writes some unsuported data in Extra Info field (e.g. per-dive GF settings)
  - can print everything to stdout for output redirection
 
 ### Installation
@@ -38,6 +39,13 @@ Hopefully Subsurface will have such import feature in near future.
  - clone or download *this* repository
  - run fit2subs.py with options described below, in **Usage** section
  - you can play with some sample diving / non-diving activities available in folder *fit-files*
+
+And please, don't judge diving profiles from fit-files folder. 
+Some errors and violations were forced intentionally to collect data
+for FIT protocol reverse engineering. I dived with second
+computer and tried switching Garmin to wrong tanks, violating MODs,
+setting sick depth and time alarms, ...
+
 
 ### Usage
 
