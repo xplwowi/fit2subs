@@ -851,10 +851,10 @@ def message_processor(dive_log, fit_file):
             elif decoder.field('event') == '56' and decoder.field('data') == '0':  # Deco required
                 dive_log.add_event('deco', decoder.field('timestamp', raw=True))
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '10':  # 20s to act. end timer started 20s
+            elif decoder.field('event') == '56' and decoder.field('data') == '10':  # Deco finished - free to exit
                 dive_log.add_event('last stop completed', decoder.field('timestamp', raw=True))
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '23':  # 20s to act. end timer started 20s
+            elif decoder.field('event') == '56' and decoder.field('data') == '23':  # Deco depth reached
                 dive_log.add_event('deco stop', decoder.field('timestamp', raw=True))
 
             elif decoder.field('event') == '57':  # Mix change - data contains gas number (cylinder index)
@@ -866,7 +866,7 @@ def message_processor(dive_log, fit_file):
             elif decoder.field('event') == '56' and decoder.field('data') == '19':  # Last event still in progress ???
                 pass  # Don't waste graph
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '2':  # 20s to act. end timer started 20s
+            elif decoder.field('event') == '56' and decoder.field('data') == '2':  # 20s to activity end timer started
                 pass  # Don't waste graph
 
             elif decoder.field('event') == '48':  # Dive finished (end GPS position fix maybe) ???
@@ -881,11 +881,10 @@ def message_processor(dive_log, fit_file):
 
             # TODO: collect and deeper investigate marker events and their fields numbering:
             # For now (can be found in multi-mix deco dives):
-            # event: 56, data: 3
-            # event: 56, data: 23
             # event: 56, data: 1
             # event: 56, data: 5
-            # event: 56, data: 10
+            # event: 56, data: 9
+            # event: 56, data: 18
 
             # -- Sample Fields -- #
             # event: timer
