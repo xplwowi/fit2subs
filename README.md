@@ -40,6 +40,27 @@ Hopefully Subsurface will have such import feature in near future.
  - run fit2subs.py with options described below, in **Usage** section
  - you can play with some sample diving / non-diving activities available in folder *fit-files*
 
+    Listed fit-files directory content with two non-diving activities:
+   ```shell
+    $ ./fit2subs.py -f fit-files/* -l 
+   
+    Garmin Descent MK1 data converter for Subsurface Dive Log (FIT to XML)
+    
+    FIT files summary...
+    
+    _________File__________|_______Date________|_____Activity______|__Time__|_Depth__
+    2018-01-06-11-47-38.fit|2018-01-06 11:47:38|single_gas_diving  |   39:41| 28.36 m
+    2018-04-03-12-07-44.fit|2018-04-03 12:07:44|hiking             |   33:50|        
+    2018-04-11-10-56-59.fit|2018-04-11 10:56:59|multi_gas_diving   | 1:25:15| 68.88 m
+    2018-05-07-12-27-54.fit|2018-05-07 12:27:54|walking            |   33:01|        
+    2018-08-10-16-48-08.fit|2018-08-10 16:48:08|apnea_diving       |   38:48|  3.51 m
+    2018-08-11-09-56-30.fit|2018-08-11 09:56:30|single_gas_diving  |   58:35| 27.02 m
+    2018-08-11-14-11-36.fit|2018-08-11 14:11:36|single_gas_diving  | 1:05:30| 20.63 m
+    2018-08-13-13-48-26.fit|2018-08-13 13:48:26|multi_gas_diving   | 1:09:05| 15.23 m
+    2018-08-14-09-50-38.fit|2018-08-14 09:50:38|single_gas_diving  | 1:03:30| 36.22 m
+    
+    Sucessfully listed 9 of 9 FIT files
+   ```
 And please, don't judge diving profiles from fit-files folder. 
 Some errors and violations were forced intentionally to collect data
 for FIT protocol reverse engineering. I dived with second
