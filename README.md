@@ -41,7 +41,7 @@ Hopefully Subsurface will have such import feature in near future.
  - you can play with some sample diving / non-diving activities available in folder *fit-files*
 
     Listed fit-files directory content with two non-diving activities:
-   ```shell
+   ```
     $ ./fit2subs.py -f fit-files/* -l 
    
     Garmin Descent MK1 data converter for Subsurface Dive Log (FIT to XML)
