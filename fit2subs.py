@@ -8,7 +8,7 @@
 # description     :Subsurface log importer for Garmin FIT files
 # author-email    :xplwowi@gmail.com
 
-__version__ = '0.12'
+__version__ = '0.13'
 
 import hashlib
 import datetime
@@ -220,7 +220,6 @@ def fit_summary(fit_file):
     messages = fitparser.get_messages()  # Fitparse messages iterator object
     time_offset = 0
 
-    # As summary record is at the end of FIT files, extra record traversal is required (time consuming)
     for record in messages:
         if record.name == 'device_settings':
             val_dict = record.get_values()
@@ -339,10 +338,11 @@ class DiveLog(object):
         self._root = self._tree.getroot()
         self._current_dive_element = None
         self._current_computer_element = None
-        self._sample_template = {'time': None, 'depth': None, 'temp': None, 'ndl': None, 'tts': None,
+        self._sample_template = {'time': None, 'depth': None, 'temp': None, 'ndl': None, 'tts': None, 'in_deco': None,
                                  'stoptime': None, 'stopdepth': None, 'cns': None, 'heartbeat': None}
         self._dc_data_template = {'model': None, 'deviceid': None, 'serial': None, 'firmware': None}
         self._dive_data_template = {'number': None, 'divesiteid': None, 'date': None, 'time': None, 'duration': None}
+        self.travel_gas_index = 0
         self._sample_cache = self._sample_template.copy()
         # Public vars
         self.time_offset = None  # Offset used to calculate dive start time
@@ -483,14 +483,16 @@ class DiveLog(object):
         self._current_computer_element.set('model', self.dc_data['model'])
         self._current_computer_element.set('deviceid', self.dc_data['deviceid'])
         self._current_computer_element.set('diveid', diveid)
-        # Add first gas change to cylinder #0 at the begining of the dive
-        self.add_gas_change('0', self.activity_start_timestamp)
         return True
 
     def set_subsport(self, sub_sport):
         """Sets 'Freedive' attrib"""
         if sub_sport in ('apnea_diving', 'apnea_hunting'):  # Subsurface does not set this attrib for OC
             self._current_computer_element.set('dctype', 'Freedive')
+
+    def set_travel_gas(self):
+        """Sets travel gas index"""
+        self.add_gas_change(self.travel_gas_index, self.activity_start_timestamp)
 
     def add_summary_temp(self, air):
         """Adds water/air temperature element
@@ -570,20 +572,26 @@ class DiveLog(object):
             new_surfacetime = ETree.SubElement(self._current_computer_element, 'surfacetime')
             new_surfacetime.text = time
 
-    def add_event(self, event_type, timestamp):
+    def add_event(self, event_type, timestamp, severity):
         """General events handling"""
         if event_type is not None and timestamp is not None:
             new_event = ETree.SubElement(self._current_computer_element, 'event')
-            new_event.set('name', event_type)
             new_event.set('time', timestamps_diff(self.activity_start_timestamp, timestamp))
+            new_event.set('type', '26')  # From libdivecomputer parser_sample_event_t enum SAMPLE_EVENT_STRING
+            new_event.set('flags', str(severity << 2))  # From garmin_parser.c
+            new_event.set('name', event_type)
 
     def add_gas_change(self, cylinder_index, timestamp):
         """Adds gas change events"""
         if cylinder_index is not None and timestamp is not None:
             new_event = ETree.SubElement(self._current_computer_element, 'event')
+            new_event.set('time', timestamps_diff(self.activity_start_timestamp, timestamp))
+            new_event.set('type', '25')  # From libdivecomputer parser_sample_event_t enum SAMPLE_EVENT_GASCHANGE2
+            new_event.set('flags', str(int(cylinder_index) + 1))
             new_event.set('name', 'gaschange')
             new_event.set('cylinder', cylinder_index)
-            new_event.set('time', timestamps_diff(self.activity_start_timestamp, timestamp))
+            # new_event.set('o2', '?%')
+            # new_event.set('he', '?%')
 
     def save_dive(self):
         """Saves dive element data attributes"""
@@ -597,6 +605,14 @@ class DiveLog(object):
         for key in self._sample_template:  # Should retain items order from template in python AFAIK >= 3.6
             curr_val = self.sample_data.get(key)
             prev_val = self._sample_cache.get(key)
+
+            if key == 'in_deco':  # Relate current flag value to its previous state and required deco time
+                next_stop_time = self.sample_data.get('stoptime')
+                if next_stop_time is not None and next_stop_time != '0:00 min':  # Entering deco
+                    if prev_val is None or prev_val == '0':
+                        curr_val = '1'
+                elif prev_val == '1' and next_stop_time == '0:00 min':  # Finishing deco
+                    curr_val = '0'
 
             # Skip attribs that should always exist (time, depth) and update cached value if current differs.
             # Used to compress Subsurface log by adding only attribs changing previous (cached) state.
@@ -827,48 +843,84 @@ def message_processor(dive_log, fit_file):
             if decoder.field('event_type') == 'start':  # Activity start event
                 dive_log.activity_start_timestamp = decoder.field('timestamp', raw=True)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '4':  # ppO2 violation
-                dive_log.add_event('PO2', decoder.field('timestamp', raw=True))
+            # Alerts =======
+            elif decoder.field('event') == '56' and decoder.field('data') == '0':  # Deco required
+                dive_log.add_event('Deco required', decoder.field('timestamp', raw=True), 2)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '22':  # Safety stop begin
-                dive_log.add_event('safety stop', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '1':  # Gass switch prompted
+                pass  # Don't waste graph
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '17':  # Ascent speed too high
-                dive_log.add_event('ascent', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '2':  # Surface
+                pass  # Don't waste graph
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '11':  # Safety stop ceiling broken
-                dive_log.add_event('ceiling (safety stop)', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '3':  # Approaching NDL
+                dive_log.add_event('Approaching NDL', decoder.field('timestamp', raw=True), 2)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '8':  # Depth alert
-                dive_log.add_event('maxdepth', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '4':  # ppO2 soft violation
+                dive_log.add_event('ppO2 warning', decoder.field('timestamp', raw=True), 3)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '5':  # ppO2 high critical
+                dive_log.add_event('ppO2 critical high', decoder.field('timestamp', raw=True), 4)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '6':  # ppO2 high critical
+                dive_log.add_event('ppO2 critical low', decoder.field('timestamp', raw=True), 4)
 
             elif decoder.field('event') == '56' and decoder.field('data') == '7':  # Time alert
-                dive_log.add_event('divetime', decoder.field('timestamp', raw=True))
+                dive_log.add_event('Time alert', decoder.field('timestamp', raw=True), 2)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '3':  # First ceiling
-                dive_log.add_event('first ceiling', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '8':  # Depth alert
+                dive_log.add_event('Depth alert', decoder.field('timestamp', raw=True), 2)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '0':  # Deco required
-                dive_log.add_event('deco', decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '9':  # Deco ceiling broken
+                dive_log.add_event('Deco ceiling broken', decoder.field('timestamp', raw=True), 3)
 
             elif decoder.field('event') == '56' and decoder.field('data') == '10':  # Deco finished - free to exit
-                dive_log.add_event('last stop completed', decoder.field('timestamp', raw=True))
+                dive_log.add_event('Deco completed', decoder.field('timestamp', raw=True), 1)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '23':  # Deco depth reached
-                dive_log.add_event('deco stop', decoder.field('timestamp', raw=True))
-
-            elif decoder.field('event') == '57':  # Mix change - data contains gas number (cylinder index)
-                dive_log.add_gas_change(decoder.field('data'), decoder.field('timestamp', raw=True))
+            elif decoder.field('event') == '56' and decoder.field('data') == '11':  # Safety stop ceiling broken
+                dive_log.add_event('Safety stop ceiling broken', decoder.field('timestamp', raw=True), 3)
 
             elif decoder.field('event') == '56' and decoder.field('data') == '12':  # Safety stop completed
                 pass  # Don't waste graph
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '19':  # Last event still in progress ???
+            elif decoder.field('event') == '56' and decoder.field('data') == '13':  # CNS warning
+                dive_log.add_event('CNS warning', decoder.field('timestamp', raw=True), 3)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '14':  # CNS critical
+                dive_log.add_event('CNS critical', decoder.field('timestamp', raw=True), 4)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '15':  # OTU warning
+                dive_log.add_event('OTU warning', decoder.field('timestamp', raw=True), 3)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '16':  # OTU critical
+                dive_log.add_event('OTU critical', decoder.field('timestamp', raw=True), 4)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '17':  # Ascent speed too high
+                dive_log.add_event('Ascent speed alert', decoder.field('timestamp', raw=True), 3)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '18':  # Alert manualy deleted
                 pass  # Don't waste graph
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '2':  # 20s to activity end timer started
+            elif decoder.field('event') == '56' and decoder.field('data') == '19':  # Alert timed out
                 pass  # Don't waste graph
 
+            elif decoder.field('event') == '56' and decoder.field('data') == '20':  # Battery low
+                dive_log.add_event('Battery low', decoder.field('timestamp', raw=True), 3)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '21':  # Battery critical
+                dive_log.add_event('Battery critical', decoder.field('timestamp', raw=True), 4)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '22':  # Safety stop begin
+                dive_log.add_event('Safety stop begin', decoder.field('timestamp', raw=True), 1)
+
+            elif decoder.field('event') == '56' and decoder.field('data') == '23':  # Approaching deco stop
+                dive_log.add_event('Approaching first deco stop', decoder.field('timestamp', raw=True), 1)
+
+            # Gas change ======
+            elif decoder.field('event') == '57':  # Mix change - data contains gas number (cylinder index)
+                dive_log.add_gas_change(decoder.field('data'), decoder.field('timestamp', raw=True))
+
+            # Dive end events ======
             elif decoder.field('event') == '48':  # Dive finished (end GPS position fix maybe) ???
                 pass  # Don't waste graph
 
@@ -878,13 +930,6 @@ def message_processor(dive_log, fit_file):
             else:  # All other events (for reverse engineering only)
                 dive_log.add_event('event %s, data %s' % (decoder.field('event'), decoder.field('data')),
                                    decoder.field('timestamp', raw=True))  # Fake event description
-
-            # TODO: collect and deeper investigate marker events and their fields numbering:
-            # For now (can be found in multi-mix deco dives):
-            # event: 56, data: 1
-            # event: 56, data: 5
-            # event: 56, data: 9
-            # event: 56, data: 18
 
             # -- Sample Fields -- #
             # event: timer
@@ -939,6 +984,7 @@ def message_processor(dive_log, fit_file):
             dive_log.add_water_data(decoder.field('water_density'))
             dive_log.add_extra_data('GFLow', decoder.field('gf_low'))  # Only global GF setting present in Subsurface
             dive_log.add_extra_data('GFHigh', decoder.field('gf_high'))  # Only global GF setting present in Subsurface
+            dive_log.travel_gas_index = decoder.field('message_index')  # Travel gas setting (update from Garmin)
 
             # -- Sample Fields -- #
             # apnea_countdown_enabled: False
@@ -1087,6 +1133,8 @@ def message_processor(dive_log, fit_file):
                 abs_press = float(decoder.field('absolute_pressure', noconv=True)) / 100000
                 wtr_press = float(decoder.field('depth', noconv=True)) / 10
                 dive_log.add_surface_pressure(abs_press - wtr_press)
+                # Add first gas change to travel gas at the begining of the dive
+                dive_log.set_travel_gas()
                 dive_log.firstrecord = False
 
             dive_log.sample_data['heartbeat'] = decoder.field('heart_rate')
@@ -1097,7 +1145,6 @@ def message_processor(dive_log, fit_file):
             dive_log.sample_data['cns'] = decoder.field('cns_load')
             dive_log.sample_data['ndl'] = decoder.field('ndl_time')
             dive_log.sample_data['tts'] = decoder.field('time_to_surface')
-
             dive_log.sample_data['time'] = timestamps_diff(dive_log.activity_start_timestamp,
                                                            decoder.field('timestamp', raw=True))  # Sets sample offset
             dive_log.sample_data['temp'] = decoder.field('temperature')
@@ -1283,7 +1330,7 @@ def main():
                                 'Allows autonumbering in further joining output file with existing log '
                                 'using Subsurface "import log" feature.')
 
-    if '-p' not in sys.argv or '--pipeout' in sys.argv:  # Suppress script description
+    if '-p' not in sys.argv or '--pipeout' not in sys.argv:  # Suppress script description
         print('Garmin Descent MK1 data converter for Subsurface Dive Log (FIT to XML)\n')
 
     if len(sys.argv) < 2:  # To print help even if script is called without parameters
