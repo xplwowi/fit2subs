@@ -864,7 +864,7 @@ def message_processor(dive_log, fit_file):
             elif decoder.field('event') == '56' and decoder.field('data') == '5':  # ppO2 high critical
                 dive_log.add_event('ppO2 critical high', decoder.field('timestamp', raw=True), 4)
 
-            elif decoder.field('event') == '56' and decoder.field('data') == '6':  # ppO2 high critical
+            elif decoder.field('event') == '56' and decoder.field('data') == '6':  # ppO2 low critical
                 dive_log.add_event('ppO2 critical low', decoder.field('timestamp', raw=True), 4)
 
             elif decoder.field('event') == '56' and decoder.field('data') == '7':  # Time alert
