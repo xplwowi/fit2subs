@@ -411,9 +411,6 @@ class DiveLog(object):
             for attr in self.dc_data:
                 if self.dc_data[attr] is not None:
                     new_dc.set(attr, self.dc_data[attr])
-        else:  # Update existing record (FW version only)
-            if self.dc_data['firmware'] is not None:
-                dc_element.set('firmware', self.dc_data['firmware'])
 
     def update_site(self, lat, long):
         """Creates or updates dive sites"""
