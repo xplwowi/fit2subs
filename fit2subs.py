@@ -825,17 +825,19 @@ def message_processor(dive_log, fit_file):
     # Records processing
     for record in messages:  # Iterate through all data messages
 
-        if record.name == 'file_id':  # Dive computer info [1]
+        if record.name == 'device_info':  # Dive computer info [1]
             decoder.load_record(record)
-            dive_log.dc_data['model'] = decoder.field('garmin_product')
-            dive_log.dc_data['serial'] = decoder.field('serial_number')
+            if decoder.field('device_index') == 'creator':
+                fw = decoder.field('software_version')
+                product = decoder.field('garmin_product')
+                if product == '2859':
+                    product = 'Garmin Descent MK1'
+                product = '{} ({})'.format(product, fw)
+                dive_log.dc_data['model'] = product
+                dive_log.dc_data['serial'] = decoder.field('serial_number')
 
-            # DC unique ID created by hashing 'model+serial' fields
-            dive_log.dc_data['deviceid'] = hashit([dive_log.dc_data['model'], dive_log.dc_data['serial']])
-
-        if record.name == 'file_creator':  # FW info [2]
-            decoder.load_record(record)
-            dive_log.dc_data['firmware'] = decoder.field('software_version')
+                # DC unique ID created by hashing 'model+serial+fw' fields
+                dive_log.dc_data['deviceid'] = hashit([product, dive_log.dc_data['serial'], fw])
 
         if record.name == 'event':  # Catches 'event' type records [3]
             decoder.load_record(record)
